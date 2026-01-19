@@ -1,0 +1,216 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+enum Role {
+  SUPER_ADMIN
+  PLANILLA_EDITOR
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(VIEWER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ============================================
+// EMPLOYEE
+// ============================================
+
+model Employee {
+  id              String   @id @default(cuid())
+  // Documentos de identidad
+  dui             String   @unique // Documento Único de Identidad
+  nit             String   @unique // Número de Identificación Tributaria
+  nup             String?  // Número Único Previsional (AFP)
+  isssNumber      String?  // Número de ISSS
+  
+  // Información personal
+  firstName       String
+  lastName        String
+  email           String?
+  phone           String?
+  address         String?
+  birthDate       DateTime?
+  
+  // Información laboral
+  hireDate        DateTime
+  terminationDate DateTime?
+  baseSalary      Float
+  position        String
+  department      String?
+  
+  // Integración SAP B1
+  sapCostCenter   String?  // Centro de Costos en SAP
+  sapEmployeeId   String?  // ID del empleado en SAP
+  
+  // Estado
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relaciones
+  attendances     Attendance[]
+  payrollItems    PayrollItem[]
+}
+
+// ============================================
+// ATTENDANCE (MARCAS BIOMÉTRICAS)
+// ============================================
+
+enum AttendanceType {
+  IN
+  OUT
+}
+
+enum AttendanceSource {
+  FACE_ID
+  FINGERPRINT
+  WEB
+  MANUAL
+}
+
+model Attendance {
+  id         String           @id @default(cuid())
+  employeeId String
+  employee   Employee         @relation(fields: [employeeId], references: [id])
+  timestamp  DateTime
+  type       AttendanceType
+  source     AttendanceSource
+  
+  // Metadata
+  deviceId   String?
+  notes      String?
+  createdAt  DateTime         @default(now())
+  
+  @@index([employeeId, timestamp])
+}
+
+// ============================================
+// PAYROLL
+// ============================================
+
+enum PayrollPeriodType {
+  QUINCENA_1  // Del 1 al 15
+  QUINCENA_2  // Del 16 al último día
+  MENSUAL
+}
+
+enum PayrollStatus {
+  ABIERTO
+  EN_PROCESO
+  CERRADO
+}
+
+model PayrollPeriod {
+  id          String            @id @default(cuid())
+  year        Int
+  month       Int
+  periodType  PayrollPeriodType
+  status      PayrollStatus     @default(ABIERTO)
+  
+  startDate   DateTime
+  endDate     DateTime
+  
+  // Totales calculados
+  totalGross      Float?
+  totalDeductions Float?
+  totalNet        Float?
+  totalPatronal   Float?
+  
+  closedAt    DateTime?
+  closedBy    String?
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  // Relaciones
+  items       PayrollItem[]
+  
+  @@unique([year, month, periodType])
+}
+
+model PayrollItem {
+  id              String        @id @default(cuid())
+  payrollPeriodId String
+  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+  employeeId      String
+  employee        Employee      @relation(fields: [employeeId], references: [id])
+  
+  // Ingresos
+  baseSalary      Float
+  overtimeHours   Float         @default(0)
+  overtimePay     Float         @default(0)
+  nightShiftHours Float         @default(0)
+  nightShiftPay   Float         @default(0)
+  bonuses         Float         @default(0)
+  grossSalary     Float
+  
+  // Deducciones Laborales
+  isssLaboral     Float
+  afpLaboral      Float
+  rentaISR        Float
+  otherDeductions Float         @default(0)
+  totalDeductions Float
+  
+  // Salario Neto
+  netSalary       Float
+  
+  // Aportes Patronales (para referencia)
+  isssPatronal    Float
+  afpPatronal     Float
+  insaforp        Float
+  
+  // Metadata
+  hasInconsistencies Boolean    @default(false)
+  inconsistencyNotes String?
+  
+  createdAt       DateTime      @default(now())
+  
+  @@unique([payrollPeriodId, employeeId])
+}
+
+// ============================================
+// SUBSCRIPTION / LICENSE
+// ============================================
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+model Subscription {
+  id              String             @id @default(cuid())
+  companyName     String
+  companyNIT      String
+  
+  employeeLimit   Int
+  expirationDate  DateTime
+  status          SubscriptionStatus @default(ACTIVE)
+  
+  // Plan info
+  planName        String
+  pricePerMonth   Float
+  
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
